@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8' />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.20/index.global.min.css' />
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.20/index.global.min.js'></script>
+    <style>
+        body { margin: 0; padding: 0; font-family: system-ui; background: #f5f5f5; }
+        #calendar { max-width: 100%; margin: 0 auto; padding: 8px; background: white; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .fc-event-title { font-weight: 500; }
+        .fc-timegrid-event .fc-event-time { font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div id='calendar'></div>
+
+    <script>
+        // ---------- 存储 ----------
+        let events = [];
+
+        function loadEvents() {
+            const stored = localStorage.getItem('time_events');
+            if (stored) {
+                events = JSON.parse(stored);
+            } else {
+                // 范例：带时间的行程
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                const tomorrowStr = tomorrow.toISOString().slice(0,10);
+                events = [
+                    { id: '1', title: '团队会议', start: tomorrowStr + 'T10:00:00', end: tomorrowStr + 'T11:30:00', allDay: false },
+                    { id: '2', title: '午休', start: tomorrowStr + 'T12:00:00', end: tomorrowStr + 'T13:00:00', allDay: false }
+                ];
+            }
+            return events;
+        }
+
+        function saveEvents() {
+            localStorage.setItem('time_events', JSON.stringify(events));
+        }
+
+        // 解析用户输入的时间 (HH:MM 或 HH:MM-HH:MM)
+        function parseTimeInput(input, defaultDate) {
+            // 输入格式：09:00 或 09:00-10:30
+            const parts = input.split('-');
+            const startTime = parts[0].trim();
+            let endTime = parts.length > 1 ? parts[1].trim() : null;
+            // 验证时间格式
+            const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+            if (!timeRegex.test(startTime)) return null;
+            const startDateTime = defaultDate + 'T' + startTime + ':00';
+            let endDateTime = null;
+            if (endTime) {
+                if (!timeRegex.test(endTime)) return null;
+                endDateTime = defaultDate + 'T' + endTime + ':00';
+            }
+            return { start: startDateTime, end: endDateTime };
+        }
+
+        // 添加行程 (带时间)
+        function addEvent(title, date, startTime, endTime) {
+            if (!title || title.trim() === '') return null;
+            let start = date + 'T' + startTime + ':00';
+            let end = endTime ? date + 'T' + endTime + ':00' : null;
+            const newId = Date.now().toString();
+            const newEvent = {
+                id: newId,
+                title: title.trim(),
+                start: start,
+                end: end,
+                allDay: false
+            };
+            events.push(newEvent);
+            saveEvents();
+            return newEvent;
+        }
+
+        // 更新行程
+        function updateEvent(id, newTitle, newStart, newEnd) {
+            const index = events.findIndex(e => e.id === id);
+            if (index !== -1) {
+                events[index].title = newTitle.trim();
+                events[index].start = newStart;
+                events[index].end = newEnd;
+                saveEvents();
+                return true;
+            }
+            return false;
+        }
+
+        // 删除行程
+        function deleteEvent(id) {
+            const index = events.findIndex(e => e.id === id);
+            if (index !== -1) {
+                events.splice(index, 1);
+                saveEvents();
+                return true;
+            }
+            return false;
+        }
+
+        // ---------- 初始化日历 ----------
+        document.addEventListener('DOMContentLoaded', function() {
+            loadEvents();
+
+            const calendarEl = document.getElementById('calendar');
+            const calendar = new FullCalendar.Calendar(calendarEl, {
+                initialView: 'dayGridMonth',
+                headerToolbar: {
+                    left: 'prev,next today',
+                    center: 'title',
+                    right: 'dayGridMonth,timeGridWeek,timeGridDay'
+                },
+                locale: 'zh-tw',
+                firstDay: 1,
+                height: 'auto',
+                slotMinTime: '08:00:00',
+                slotMaxTime: '22:00:00',
+                events: events,
+                editable: false,  // 禁止拖拽，避免复杂
+                // 点击日期：添加带时间的行程
+                dateClick: function(info) {
+                    let title = prompt('📝 行程标题:', '');
+                    if (!title || title.trim() === '') return;
+                    
+                    let startTime = prompt('开始时间 (例如 09:00 或 14:30):', '10:00');
+                    if (!startTime) return;
+                    let endTime = prompt('结束时间 (例如 12:00，若不需要可留空):', '11:30');
+                    
+                    // 验证时间格式
+                    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+                    if (!timeRegex.test(startTime)) {
+                        alert('开始时间格式错误，应为 HH:MM');
+                        return;
+                    }
+                    let end = null;
+                    if (endTime && endTime.trim() !== '') {
+                        if (!timeRegex.test(endTime)) {
+                            alert('结束时间格式错误，应为 HH:MM');
+                            return;
+                        }
+                        end = endTime;
+                    }
+                    const newEvent = addEvent(title, info.dateStr, startTime, end);
+                    if (newEvent) {
+                        calendar.addEvent(newEvent);
+                        alert('✅ 已添加行程');
+                    }
+                },
+                // 点击已有行程：编辑或删除
+                eventClick: function(info) {
+                    const action = confirm(`编辑或删除行程？\n\n标题：${info.event.title}\n开始：${info.event.startStr.slice(11,16)}\n结束：${info.event.endStr ? info.event.endStr.slice(11,16) : '(无)'}\n\n点「确定」编辑，点「取消」删除`);
+                    if (action) {
+                        // 编辑
+                        let newTitle = prompt('修改标题:', info.event.title);
+                        if (newTitle === null) return;
+                        if (newTitle.trim() === '') newTitle = info.event.title;
+                        
+                        let oldStartStr = info.event.startStr;
+                        let oldDate = oldStartStr.slice(0,10);
+                        let oldStartTime = oldStartStr.slice(11,16);
+                        let oldEndTime = info.event.endStr ? info.event.endStr.slice(11,16) : '';
+                        
+                        let newStartTime = prompt('开始时间 (HH:MM):', oldStartTime);
+                        if (!newStartTime) return;
+                        if (!/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(newStartTime)) {
+                            alert('时间格式错误');
+                            return;
+                        }
+                        let newEndTime = prompt('结束时间 (HH:MM，可留空):', oldEndTime);
+                        if (newEndTime && !/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(newEndTime)) {
+                            alert('结束时间格式错误');
+                            return;
+                        }
+                        let newStart = oldDate + 'T' + newStartTime + ':00';
+                        let newEnd = (newEndTime && newEndTime !== '') ? oldDate + 'T' + newEndTime + ':00' : null;
+                        
+                        updateEvent(info.event.id, newTitle, newStart, newEnd);
+                        info.event.setProp('title', newTitle);
+                        info.event.setStart(newStart);
+                        if (newEnd) info.event.setEnd(newEnd);
+                        else info.event.setEnd(null);
+                        alert('✅ 已更新');
+                    } else {
+                        // 删除
+                        if (confirm(`确定删除行程「${info.event.title}」吗？`)) {
+                            deleteEvent(info.event.id);
+                            info.event.remove();
+                            alert('🗑️ 已删除');
+                        }
+                    }
+                }
+            });
+            calendar.render();
+        });
+    </script>
+</body>
+</html>
